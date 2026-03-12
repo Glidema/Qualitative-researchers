@@ -1,7 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { collection, addDoc, serverTimestamp, getDocs, query, orderBy, getDocFromServer, doc, onSnapshot } from 'firebase/firestore';
-import { db } from './firebase';
 import { questions, dimensions, personalityTypes } from './data';
 import { ChevronRight, ChevronLeft, Send, User, Hash, Lock, LogOut, X, AlertCircle, Loader2, Check } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
@@ -11,34 +9,13 @@ function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-// --- Firestore Error Handling ---
-enum OperationType {
-  CREATE = 'create',
-  UPDATE = 'update',
-  DELETE = 'delete',
-  LIST = 'list',
-  GET = 'get',
-  WRITE = 'write',
-}
-
-interface FirestoreErrorInfo {
-  error: string;
-  operationType: OperationType;
-  path: string | null;
-  authInfo: any;
-}
-
-function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
-  const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
-    authInfo: {
-      userId: 'anonymous', // We are using password login, not Firebase Auth for admin
-    },
-    operationType,
-    path
-  };
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
+/** API 返回的 createdAt 可能是 ISO 字符串或 Firestore 风格 { toDate } */
+function getCreatedAtDate(item: { createdAt?: string | { toDate?: () => Date } }): Date | null {
+  if (!item?.createdAt) return null;
+  const c = item.createdAt;
+  if (typeof c === 'string') return new Date(c);
+  if (typeof c?.toDate === 'function') return c.toDate();
+  return null;
 }
 
 // --- Error Display Component ---
@@ -79,6 +56,7 @@ export default function App() {
   const [resultData, setResultData] = useState<any>(null);
   const [globalError, setGlobalError] = useState<string | null>(null);
   const submitTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const submitTimedOutRef = useRef(false);
 
   // Admin state
   const [showPasswordModal, setShowPasswordModal] = useState(false);
@@ -86,6 +64,7 @@ export default function App() {
   const [adminResults, setAdminResults] = useState<any[]>([]);
   const [isLoadingAdmin, setIsLoadingAdmin] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [adminRefreshTrigger, setAdminRefreshTrigger] = useState(0);
 
   // Auto-save feature
   useEffect(() => {
@@ -125,20 +104,6 @@ export default function App() {
     }
   }, [userInfo, answers, currentQuestionIndex, appState]);
 
-  useEffect(() => {
-    async function testConnection() {
-      try {
-        await getDocFromServer(doc(db, 'test', 'connection'));
-        console.log("Firestore connection test successful");
-      } catch (error) {
-        if (error instanceof Error && error.message.includes('the client is offline')) {
-          console.error("Please check your Firebase configuration. The client is offline.");
-        }
-      }
-    }
-    testConnection();
-  }, []);
-
   const handleAdminLogin = (e: React.FormEvent) => {
     e.preventDefault();
     const correctPassword = (import.meta as any).env.VITE_ADMIN_PASSWORD || 'admin123';
@@ -151,31 +116,37 @@ export default function App() {
   };
 
   useEffect(() => {
-    let unsubscribe: (() => void) | null = null;
+    if (appState !== 'admin' || !adminPassword) return;
 
-    if (appState === 'admin') {
-      setIsLoadingAdmin(true);
-      const q = query(collection(db, 'test_results'), orderBy('createdAt', 'desc'));
-      
-      unsubscribe = onSnapshot(q, (querySnapshot) => {
-        const results: any[] = [];
-        querySnapshot.forEach((doc) => {
-          results.push({ id: doc.id, ...doc.data() });
-        });
-        setAdminResults(results);
+    let cancelled = false;
+    setIsLoadingAdmin(true);
+
+    fetch('/api/results', {
+      headers: { 'X-Admin-Password': adminPassword },
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error(res.status === 401 ? '未授权' : '获取失败');
+        return res.json();
+      })
+      .then((data: any[]) => {
+        if (cancelled) return;
+        setAdminResults(Array.isArray(data) ? data : []);
         setLastUpdated(new Date());
-        setIsLoadingAdmin(false);
-      }, (error) => {
-        console.error("Error listening to admin data:", error);
-        setGlobalError("实时获取数据失败，请检查权限设置。");
-        setIsLoadingAdmin(false);
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          console.error('Admin results error:', err);
+          setGlobalError(err.message === '未授权' ? '密码错误或已失效，请重新登录。' : '获取数据失败，请重试。');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingAdmin(false);
       });
-    }
 
     return () => {
-      if (unsubscribe) unsubscribe();
+      cancelled = true;
     };
-  }, [appState]);
+  }, [appState, adminPassword, adminRefreshTrigger]);
 
   const handleResetProgress = () => {
     if (window.confirm("确定要清除所有进度并重新开始吗？")) {
@@ -259,27 +230,41 @@ export default function App() {
 
     setIsSubmitting(true);
     setSubmitSuccess(false);
+    submitTimedOutRef.current = false;
 
+    const timeoutMs = 25000; // 25 秒，弱网/境外服务可能较慢
     const timeoutId = setTimeout(() => {
+      submitTimedOutRef.current = true;
+      if (submitTimeoutRef.current) {
+        clearTimeout(submitTimeoutRef.current);
+        submitTimeoutRef.current = null;
+      }
       setIsSubmitting(false);
       setSubmitSuccess(false);
-      setGlobalError("提交超时，请检查网络连接或重试。");
-    }, 15000);
+      setGlobalError("提交超时，请检查网络连接或重试。若在国内访问，可能因网络原因无法连接数据服务器。");
+    }, timeoutMs);
     submitTimeoutRef.current = timeoutId;
 
     try {
       const { scores, topTypes } = calculateResults();
 
-      const resultPayload = {
-        name: userInfo.name,
-        studentId: userInfo.studentId,
-        scores,
-        resultTypes: topTypes,
-        createdAt: serverTimestamp(),
-      };
+      const res = await fetch('/api/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: userInfo.name,
+          studentId: userInfo.studentId,
+          scores,
+          resultTypes: topTypes,
+        }),
+      });
 
-      await addDoc(collection(db, 'test_results'), resultPayload);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error((data as { error?: string }).error || `提交失败 ${res.status}`);
+      }
 
+      if (submitTimedOutRef.current) return; // 已显示超时，不再改状态
       if (submitTimeoutRef.current) {
         clearTimeout(submitTimeoutRef.current);
         submitTimeoutRef.current = null;
@@ -293,12 +278,12 @@ export default function App() {
       setResultData(data);
       setSubmitSuccess(true);
       setIsSubmitting(false);
-      // Brief success state then switch to result; use setTimeout so resultData is committed before we show result
       setTimeout(() => {
         setAppState('result');
         setSubmitSuccess(false);
       }, 450);
     } catch (error) {
+      if (submitTimedOutRef.current) return;
       if (submitTimeoutRef.current) {
         clearTimeout(submitTimeoutRef.current);
         submitTimeoutRef.current = null;
@@ -306,7 +291,15 @@ export default function App() {
       setIsSubmitting(false);
       setSubmitSuccess(false);
       console.error("Error submitting results:", error);
-      setGlobalError("提交失败，请检查网络连接或重试。");
+      const msg = error instanceof Error ? error.message : String(error);
+      const isPermission = /permission|权限|denied/i.test(msg);
+      const isNetwork = /unavailable|network|failed to fetch|load/i.test(msg);
+      const hint = isPermission
+        ? "提交失败：无写入权限，请检查 Firestore 规则。"
+        : isNetwork
+          ? "提交失败：网络不可用或无法连接服务器，请检查网络后重试。"
+          : "提交失败，请检查网络连接或重试。";
+      setGlobalError(hint);
     }
   };
 
@@ -690,14 +683,24 @@ export default function App() {
                     <span className="ml-2 inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
                   </p>
                 </div>
-                <div className="flex gap-3 w-full md:w-auto">
+                <div className="flex gap-3 w-full md:w-auto flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => setAdminRefreshTrigger((t) => t + 1)}
+                    disabled={isLoadingAdmin}
+                    className="flex-1 md:flex-none text-center text-stone-500 hover:text-stone-800 text-sm font-medium transition-colors py-2 disabled:opacity-50"
+                  >
+                    刷新
+                  </button>
                   <button 
+                    type="button"
                     onClick={() => setAppState('intro')}
                     className="flex-1 md:flex-none text-center text-stone-500 hover:text-stone-800 text-sm font-medium transition-colors py-2"
                   >
                     返回首页
                   </button>
                   <button 
+                    type="button"
                     onClick={handleAdminLogout}
                     className="flex-1 md:flex-none flex items-center justify-center text-rose-600 hover:text-rose-700 text-sm font-medium transition-colors py-2"
                   >
@@ -729,10 +732,10 @@ export default function App() {
                         </tr>
                       </thead>
                       <tbody>
-                        {adminResults.map((result) => (
-                          <tr key={result.id} className="border-b border-stone-100 hover:bg-stone-50/50 transition-colors">
+                        {adminResults.map((result, i) => (
+                          <tr key={(result as any).id ?? `row-${i}`} className="border-b border-stone-100 hover:bg-stone-50/50 transition-colors">
                             <td className="px-6 py-4 whitespace-nowrap font-mono text-xs">
-                              {result.createdAt?.toDate ? new Date(result.createdAt.toDate()).toLocaleString() : 'N/A'}
+                              {getCreatedAtDate(result)?.toLocaleString() ?? 'N/A'}
                             </td>
                             <td className="px-6 py-4 font-medium text-stone-900">{result.name}</td>
                             <td className="px-6 py-4 font-mono">{result.studentId}</td>
@@ -757,15 +760,15 @@ export default function App() {
 
                   {/* Mobile Cards */}
                   <div className="md:hidden space-y-4">
-                    {adminResults.map((result) => (
-                      <div key={result.id} className="p-4 rounded-2xl bg-stone-50 border border-stone-100 space-y-3">
+                    {adminResults.map((result, i) => (
+                      <div key={(result as any).id ?? `card-${i}`} className="p-4 rounded-2xl bg-stone-50 border border-stone-100 space-y-3">
                         <div className="flex justify-between items-start">
                           <div>
                             <div className="font-medium text-stone-900">{result.name}</div>
                             <div className="text-xs text-stone-500 font-mono">{result.studentId}</div>
                           </div>
                           <div className="text-[10px] text-stone-400 font-mono">
-                            {result.createdAt?.toDate ? new Date(result.createdAt.toDate()).toLocaleTimeString() : 'N/A'}
+                            {getCreatedAtDate(result)?.toLocaleTimeString() ?? 'N/A'}
                           </div>
                         </div>
                         <div className="flex flex-wrap gap-1">

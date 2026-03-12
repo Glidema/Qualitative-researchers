@@ -12,12 +12,11 @@ View your app in AI Studio: https://ai.studio/apps/69601229-b8d5-41e2-97d9-9fb5b
 
 **Prerequisites:**  Node.js
 
-
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+1. 安装依赖：`npm install`
+2. 在项目根目录创建 `.env.local`，设置：
+   - `VITE_ADMIN_PASSWORD=你的管理员密码`（可选，默认 `admin123`）
+   - 若要用本地 API（提交/管理员列表），可运行 `vercel dev`（需先 `vercel link` 并配置好 KV、`ADMIN_SECRET`），否则仅前端：`npm run dev`
+3. 运行：`npm run dev`（仅前端）或 `vercel dev`（前端 + 本地 API）
 
 ## 手机端访问与测试
 
@@ -34,11 +33,14 @@ View your app in AI Studio: https://ai.studio/apps/69601229-b8d5-41e2-97d9-9fb5b
    - 点击 **Add New** → **Project**，导入你的 GitHub 仓库
    - Vercel 会自动识别为 Vite 项目（Build Command: `npm run build`，Output Directory: `dist`）
 
-3. **配置环境变量**（在 Vercel 项目 **Settings → Environment Variables** 中）：
-   - `GEMINI_API_KEY`：你的 Gemini API Key（用于服务端/构建时）
-   - `VITE_ADMIN_PASSWORD`：管理员密码（可选，会打入前端构建）
+3. **添加数据存储（必选）**  
+   在 Vercel 项目 **Storage** 或 **Marketplace** 中创建 **KV（Redis）** 存储（如 [Upstash Redis](https://vercel.com/marketplace) 等），并绑定到当前项目。绑定后会自动注入 `KV_REST_API_URL`、`KV_REST_API_TOKEN`，提交与管理员列表会使用该存储。
 
-4. **部署**
+4. **配置环境变量**（在 Vercel 项目 **Settings → Environment Variables** 中）：
+   - `VITE_ADMIN_PASSWORD`：管理员密码（前端登录用），建议与 `ADMIN_SECRET` 一致。
+   - `ADMIN_SECRET`：与管理员密码一致，用于校验 `/api/results` 请求，**必填**。
+
+5. **部署**
    - 点击 **Deploy**；之后每次推送到默认分支都会自动重新部署。
 
 ### 本地用 Vercel CLI 部署（可选）
@@ -63,5 +65,14 @@ vercel
 
 **后台功能**
 - 列表展示每条提交的：提交时间、姓名、学号、测验结果类型、四个维度得分（原本论 / 新实证论 / 建构论 / 批判理论）。
-- 数据来自 Firestore 集合 `test_results`，实时更新（有新增提交会自动刷新）。
+- 数据来自 Vercel API + KV 存储；可点击「刷新」获取最新列表。
 - 桌面端为表格，手机端为卡片列表；可「返回首页」或「退出登录」。
+
+## Vercel 一体化说明（提交与数据存储）
+
+本项目已改为 **Vercel 一体化**：前端与数据接口均部署在 Vercel，不再依赖 Firebase。
+
+- **提交**：用户点击「查看结果」后，前端请求同源接口 `POST /api/submit`，由 Vercel Serverless 写入 **Vercel KV（Redis）**。
+- **管理员列表**：后台请求 `GET /api/results`（需带管理员密码头），从 KV 读取后展示。
+- **优点**：同源请求、无需直连 Google，国内访问更稳定；配置好 KV 与 `ADMIN_SECRET` 即可使用。
+- **环境变量**：`VITE_ADMIN_PASSWORD`（前端）、`ADMIN_SECRET`（API 校验，建议与前者一致）；KV 相关变量由 Vercel 在绑定 Storage 后自动注入。

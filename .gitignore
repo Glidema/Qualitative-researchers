@@ -1,3 +1,14 @@
+# 依赖目录（不要提交，部署时由 npm install 生成）
+node_modules/
+
+# 构建产物
+dist/
+
+# 环境变量（含密钥，不要提交）
+.env
+.env.local
+.env.*.local
+
 # Cursor Helper Version: 0.1.5
 # Cursor Helper AI 相关文件
 # 忽略 .cursor/commands 目录（Cursor 命令文件）

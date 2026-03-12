@@ -30,5 +30,15 @@
       <div id="root-loading" aria-hidden="true">加载中…</div>
     </div>
     <script type="module" src="/src/main.tsx"></script>
+    <script>
+      // 若 12 秒后仍在“加载中”，说明脚本未执行（如不支持 type=module），显示提示
+      setTimeout(function() {
+        var el = document.getElementById('root-loading');
+        if (!el) return;
+        el.id = 'load-timeout-msg';
+        el.innerHTML = '<p style="margin:0 0 12px;font-size:15px;color:#444">加载超时</p><p style="margin:0 0 16px;font-size:14px;color:#78716c;line-height:1.5">请尝试：<br>1. 刷新页面<br>2. 用手机<strong>系统自带浏览器</strong>（Safari / Chrome）打开此链接<br>3. 若在 QQ/微信内，点右上角 … 选「在浏览器中打开」</p><button type="button" onclick="location.reload()" style="padding:10px 20px;background:#444;color:#fff;border:none;border-radius:12px;font-size:15px;cursor:pointer">刷新</button>';
+        el.style.animation = 'none';
+      }, 12000);
+    </script>
   </body>
 </html>
