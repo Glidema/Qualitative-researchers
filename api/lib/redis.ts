@@ -29,8 +29,17 @@ export async function getRedis(): Promise<RedisAdapter | null> {
     const client = createNodeRedis({ url });
     await client.connect();
     return {
-      lpush: (key: string, ...values: string[]) => client.lPush(key, ...values),
-      lrange: (key: string, start: number, stop: number) => client.lRange(key, start, stop),
+      lpush: async (key: string, ...values: string[]) => {
+        let n = 0;
+        for (const v of values) {
+          n = Number(await client.lPush(key, v));
+        }
+        return n;
+      },
+      lrange: async (key: string, start: number, stop: number) => {
+        const raw = await client.lRange(key, start, stop);
+        return raw.map((x) => (typeof x === 'string' ? x : String(x)));
+      },
     };
   }
 

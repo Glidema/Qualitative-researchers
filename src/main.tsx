@@ -21,7 +21,7 @@ class ErrorBoundary extends React.Component<
     if (this.state.hasError) {
       return <LoadErrorPage reason="页面加载异常，请刷新后重试" />;
     }
-    return this.props.children;
+    return (this as React.Component<{ children: React.ReactNode }, { hasError: boolean }>).props.children;
   }
 }
 
