@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { collection, addDoc, serverTimestamp, getDocs, query, orderBy, getDocFromServer, doc, onSnapshot } from 'firebase/firestore';
 import { db } from './firebase';
 import { questions, dimensions, personalityTypes } from './data';
-import { ChevronRight, ChevronLeft, Send, User, Hash, Lock, LogOut, X, AlertCircle } from 'lucide-react';
+import { ChevronRight, ChevronLeft, Send, User, Hash, Lock, LogOut, X, AlertCircle, Loader2, Check } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
@@ -75,8 +75,10 @@ export default function App() {
   const [answers, setAnswers] = useState<Record<number, number>>({});
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitSuccess, setSubmitSuccess] = useState(false); // brief "提交成功" before showing result
   const [resultData, setResultData] = useState<any>(null);
   const [globalError, setGlobalError] = useState<string | null>(null);
+  const submitTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Admin state
   const [showPasswordModal, setShowPasswordModal] = useState(false);
@@ -245,18 +247,18 @@ export default function App() {
     }
 
     setIsSubmitting(true);
-    
-    // Set a timeout to prevent hanging
+    setSubmitSuccess(false);
+
     const timeoutId = setTimeout(() => {
-      if (isSubmitting) {
-        setIsSubmitting(false);
-        setGlobalError("提交超时，请检查网络连接或重试。");
-      }
-    }, 10000); // 10 seconds timeout
+      setIsSubmitting(false);
+      setSubmitSuccess(false);
+      setGlobalError("提交超时，请检查网络连接或重试。");
+    }, 15000);
+    submitTimeoutRef.current = timeoutId;
 
     try {
       const { scores, topTypes } = calculateResults();
-      
+
       const resultPayload = {
         name: userInfo.name,
         studentId: userInfo.studentId,
@@ -266,20 +268,31 @@ export default function App() {
       };
 
       await addDoc(collection(db, 'test_results'), resultPayload);
-      clearTimeout(timeoutId);
+
+      if (submitTimeoutRef.current) {
+        clearTimeout(submitTimeoutRef.current);
+        submitTimeoutRef.current = null;
+      }
       console.log("Result submitted successfully");
-      
-      // Clear saved progress on successful submission
+
       localStorage.removeItem('quiz_progress');
-      
       setResultData({ scores, topTypes });
+
+      // Brief success state so transition feels intentional, not a sudden jump
+      setSubmitSuccess(true);
+      setIsSubmitting(false);
+      await new Promise((r) => setTimeout(r, 450));
       setAppState('result');
+      setSubmitSuccess(false);
     } catch (error) {
-      clearTimeout(timeoutId);
+      if (submitTimeoutRef.current) {
+        clearTimeout(submitTimeoutRef.current);
+        submitTimeoutRef.current = null;
+      }
+      setIsSubmitting(false);
+      setSubmitSuccess(false);
       console.error("Error submitting results:", error);
       setGlobalError("提交失败，请检查网络连接或重试。");
-    } finally {
-      setIsSubmitting(false);
     }
   };
 
@@ -340,7 +353,7 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      <main className="max-w-3xl mx-auto px-4 pb-12 pt-6 md:pb-20 md:pt-10">
+      <main className="max-w-3xl mx-auto px-4 pt-6 pb-[calc(3rem+env(safe-area-inset-bottom))] md:pb-20 md:pt-10">
         <AnimatePresence mode="wait">
           {appState === 'intro' && (
             <motion.div
@@ -397,7 +410,7 @@ export default function App() {
                 <div className="flex flex-col gap-3 mt-8">
                   <button
                     type="submit"
-                    className="w-full flex justify-center items-center py-3 px-4 border border-transparent rounded-xl shadow-sm text-white bg-stone-800 hover:bg-stone-900 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-stone-900 transition-all font-medium"
+                    className="w-full flex justify-center items-center min-h-[48px] py-3 px-4 border border-transparent rounded-xl shadow-sm text-white bg-stone-800 hover:bg-stone-900 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-stone-900 transition-all font-medium"
                   >
                     开始测试
                     <ChevronRight className="ml-2 h-5 w-5" />
@@ -423,8 +436,39 @@ export default function App() {
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -20 }}
-              className="bg-white rounded-[2rem] p-6 md:p-12 shadow-sm border border-stone-100"
+              className="bg-white rounded-[2rem] p-6 md:p-12 shadow-sm border border-stone-100 relative"
             >
+              {/* Submit overlay: loading or brief success */}
+              <AnimatePresence>
+                {(isSubmitting || submitSuccess) && (
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.2 }}
+                    className="absolute inset-0 rounded-[2rem] bg-stone-900/60 backdrop-blur-[2px] flex flex-col items-center justify-center z-10 min-h-[280px]"
+                    aria-live="polite"
+                    aria-busy={isSubmitting}
+                  >
+                    {isSubmitting ? (
+                      <>
+                        <Loader2 className="w-10 h-10 text-white animate-spin mb-3" aria-hidden />
+                        <p className="text-white font-medium">正在提交，请稍候...</p>
+                        <p className="text-stone-300 text-sm mt-1">数据正在同步到云端</p>
+                      </>
+                    ) : (
+                      <>
+                        <div className="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center mb-3">
+                          <Check className="w-7 h-7 text-white" strokeWidth={2.5} aria-hidden />
+                        </div>
+                        <p className="text-white font-medium">提交成功</p>
+                        <p className="text-stone-300 text-sm mt-1">正在跳转到结果页</p>
+                      </>
+                    )}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
               <div className="mb-6 md:mb-8">
                 <div className="flex justify-between text-xs md:text-sm text-stone-500 mb-2 font-mono">
                   <span>Question {currentQuestionIndex + 1}</span>
@@ -454,9 +498,10 @@ export default function App() {
                 ].map((option) => (
                   <button
                     key={option.value}
+                    type="button"
                     onClick={() => handleAnswer(option.value)}
                     className={cn(
-                      "w-full text-left px-6 py-4 rounded-xl border transition-all duration-200 flex items-center justify-between group",
+                      "w-full text-left px-6 py-4 min-h-[48px] rounded-xl border transition-all duration-200 flex items-center justify-between group",
                       answers[questions[currentQuestionIndex].id] === option.value
                         ? "border-stone-800 bg-stone-800 text-white"
                         : "border-stone-200 hover:border-stone-400 hover:bg-stone-50 text-stone-700"
@@ -477,11 +522,12 @@ export default function App() {
                 ))}
               </div>
 
-              <div className="mt-10 flex justify-between items-center">
+              <div className="mt-10 flex justify-between items-center gap-4 min-h-[44px] [padding-bottom:env(safe-area-inset-bottom)]">
                 <button
+                  type="button"
                   onClick={() => setCurrentQuestionIndex(prev => Math.max(0, prev - 1))}
                   disabled={currentQuestionIndex === 0}
-                  className="flex items-center text-stone-500 hover:text-stone-800 disabled:opacity-30 disabled:hover:text-stone-500 transition-colors"
+                  className="flex items-center justify-center min-h-[44px] min-w-[44px] py-2.5 text-stone-500 hover:text-stone-800 disabled:opacity-30 disabled:hover:text-stone-500 transition-colors"
                 >
                   <ChevronLeft className="w-5 h-5 mr-1" />
                   上一题
@@ -489,18 +535,20 @@ export default function App() {
 
                 {currentQuestionIndex === questions.length - 1 ? (
                   <button
+                    type="button"
                     onClick={handleSubmit}
-                    disabled={isSubmitting || Object.keys(answers).length < questions.length}
-                    className="flex items-center px-6 py-2.5 bg-stone-800 text-white rounded-full hover:bg-stone-900 disabled:opacity-50 transition-all"
+                    disabled={isSubmitting || submitSuccess || Object.keys(answers).length < questions.length}
+                    className="flex items-center justify-center min-h-[44px] px-6 py-2.5 bg-stone-800 text-white rounded-full hover:bg-stone-900 disabled:opacity-50 transition-all active:scale-[0.98]"
                   >
                     {isSubmitting ? "提交中..." : "查看结果"}
                     {!isSubmitting && <Send className="w-4 h-4 ml-2" />}
                   </button>
                 ) : (
                   <button
+                    type="button"
                     onClick={() => setCurrentQuestionIndex(prev => Math.min(questions.length - 1, prev + 1))}
                     disabled={!answers[questions[currentQuestionIndex].id]}
-                    className="flex items-center text-stone-500 hover:text-stone-800 disabled:opacity-30 disabled:hover:text-stone-500 transition-colors"
+                    className="flex items-center justify-center min-h-[44px] min-w-[44px] py-2.5 text-stone-500 hover:text-stone-800 disabled:opacity-30 disabled:hover:text-stone-500 transition-colors"
                   >
                     下一题
                     <ChevronRight className="w-5 h-5 ml-1" />
