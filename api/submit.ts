@@ -1,7 +1,21 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { kv } from '@vercel/kv';
+import { createClient } from '@vercel/kv';
 
 const LIST_KEY = 'quiz:results';
+
+/** 兼容多种 Redis 环境变量名：Vercel KV 前缀 或 Upstash 默认 */
+function getKvClient() {
+  const url =
+    process.env.KV_REST_API_URL ||
+    process.env.UPSTASH_REDIS_REST_URL ||
+    process.env.STORAGE_REST_API_URL;
+  const token =
+    process.env.KV_REST_API_TOKEN ||
+    process.env.UPSTASH_REDIS_REST_TOKEN ||
+    process.env.STORAGE_REST_API_TOKEN;
+  if (!url || !token) return null;
+  return createClient({ url, token });
+}
 
 interface SubmitBody {
   name: string;
@@ -26,9 +40,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    if (!process.env.KV_REST_API_URL || !process.env.KV_REST_API_TOKEN) {
+    const kv = getKvClient();
+    if (!kv) {
       return res.status(503).json({
-        error: '未配置存储：请在 Vercel 项目中添加 KV（Redis）存储并绑定到本项目。',
+        error: '未配置存储：请在 Vercel 项目 Storage 中绑定 Redis，并确保 Production 已勾选，然后重新部署。',
       });
     }
 
