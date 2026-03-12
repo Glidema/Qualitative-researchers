@@ -79,7 +79,10 @@ export default function App() {
         const { userInfo: savedUserInfo, answers: savedAnswers, currentQuestionIndex: savedIndex, appState: savedState } = JSON.parse(savedData);
         if (savedUserInfo) setUserInfo(savedUserInfo);
         if (savedAnswers) setAnswers(savedAnswers);
-        if (typeof savedIndex === 'number') setCurrentQuestionIndex(savedIndex);
+        if (typeof savedIndex === 'number') {
+          const clamped = Math.max(0, Math.min(savedIndex, questions.length - 1));
+          setCurrentQuestionIndex(clamped);
+        }
         // Only resume to quiz if they were in the middle of it
         if (savedState === 'quiz') setAppState('quiz');
       } catch (e) {
@@ -103,6 +106,14 @@ export default function App() {
       }
     }
   }, [userInfo, answers, currentQuestionIndex, appState]);
+
+  // 防止 currentQuestionIndex 越界（如从 localStorage 恢复的异常值）导致 questions[index] 为 undefined
+  useEffect(() => {
+    if (appState === 'quiz' && questions.length > 0) {
+      const safe = Math.max(0, Math.min(currentQuestionIndex, questions.length - 1));
+      if (safe !== currentQuestionIndex) setCurrentQuestionIndex(safe);
+    }
+  }, [appState, currentQuestionIndex, questions.length]);
 
   const handleAdminLogin = (e: React.FormEvent) => {
     e.preventDefault();
@@ -188,11 +199,12 @@ export default function App() {
   };
 
   const handleAnswer = (value: number) => {
-    setAnswers(prev => ({ ...prev, [questions[currentQuestionIndex].id]: value }));
-    if (currentQuestionIndex < questions.length - 1) {
-      setTimeout(() => {
-        setCurrentQuestionIndex(prev => prev + 1);
-      }, 300);
+    const safeIdx = Math.max(0, Math.min(currentQuestionIndex, questions.length - 1));
+    const q = questions[safeIdx];
+    if (!q) return;
+    setAnswers(prev => ({ ...prev, [q.id]: value }));
+    if (safeIdx < questions.length - 1) {
+      setTimeout(() => setCurrentQuestionIndex(safeIdx + 1), 300);
     }
   };
 
@@ -462,7 +474,11 @@ export default function App() {
             </motion.div>
           )}
 
-          {appState === 'quiz' && (
+          {appState === 'quiz' && (() => {
+            const safeIndex = Math.max(0, Math.min(currentQuestionIndex, questions.length - 1));
+            const currentQuestion = questions[safeIndex];
+            if (!currentQuestion) return null;
+            return (
             <motion.div
               key="quiz"
               initial={{ opacity: 0, x: 20 }}
@@ -503,20 +519,20 @@ export default function App() {
 
               <div className="mb-6 md:mb-8">
                 <div className="flex justify-between text-xs md:text-sm text-stone-500 mb-2 font-mono">
-                  <span>Question {currentQuestionIndex + 1}</span>
+                  <span>Question {safeIndex + 1}</span>
                   <span>{questions.length}</span>
                 </div>
                 <div className="w-full bg-stone-100 rounded-full h-1">
                   <div
                     className="bg-stone-800 h-1 rounded-full transition-all duration-500 ease-out"
-                    style={{ width: `${((currentQuestionIndex + 1) / questions.length) * 100}%` }}
+                    style={{ width: `${((safeIndex + 1) / questions.length) * 100}%` }}
                   ></div>
                 </div>
               </div>
 
               <div className="min-h-[160px] md:min-h-[200px] flex flex-col justify-center mb-8 md:mb-10">
                 <h2 className="text-xl md:text-3xl font-medium text-stone-900 leading-relaxed">
-                  {questions[currentQuestionIndex].text}
+                  {currentQuestion.text}
                 </h2>
               </div>
 
@@ -534,7 +550,7 @@ export default function App() {
                     onClick={() => handleAnswer(option.value)}
                     className={cn(
                       "w-full text-left px-6 py-4 min-h-[48px] rounded-xl border transition-all duration-200 flex items-center justify-between group",
-                      answers[questions[currentQuestionIndex].id] === option.value
+                      answers[currentQuestion.id] === option.value
                         ? "border-stone-800 bg-stone-800 text-white"
                         : "border-stone-200 hover:border-stone-400 hover:bg-stone-50 text-stone-700"
                     )}
@@ -542,11 +558,11 @@ export default function App() {
                     <span className="font-medium">{option.label}</span>
                     <div className={cn(
                       "w-5 h-5 rounded-full border-2 flex items-center justify-center",
-                      answers[questions[currentQuestionIndex].id] === option.value
+                      answers[currentQuestion.id] === option.value
                         ? "border-white"
                         : "border-stone-300 group-hover:border-stone-400"
                     )}>
-                      {answers[questions[currentQuestionIndex].id] === option.value && (
+                      {answers[currentQuestion.id] === option.value && (
                         <div className="w-2.5 h-2.5 bg-white rounded-full" />
                       )}
                     </div>
@@ -558,14 +574,14 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => setCurrentQuestionIndex(prev => Math.max(0, prev - 1))}
-                  disabled={currentQuestionIndex === 0}
+                  disabled={safeIndex === 0}
                   className="flex items-center justify-center min-h-[44px] min-w-[44px] py-2.5 text-stone-500 hover:text-stone-800 disabled:opacity-30 disabled:hover:text-stone-500 transition-colors"
                 >
                   <ChevronLeft className="w-5 h-5 mr-1" />
                   上一题
                 </button>
 
-                {currentQuestionIndex === questions.length - 1 ? (
+                {safeIndex === questions.length - 1 ? (
                   <div className="flex flex-col items-end gap-1">
                     <button
                       type="button"
@@ -584,7 +600,7 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => setCurrentQuestionIndex(prev => Math.min(questions.length - 1, prev + 1))}
-                    disabled={!answers[questions[currentQuestionIndex].id]}
+                    disabled={!answers[currentQuestion.id]}
                     className="flex items-center justify-center min-h-[44px] min-w-[44px] py-2.5 text-stone-500 hover:text-stone-800 disabled:opacity-30 disabled:hover:text-stone-500 transition-colors"
                   >
                     下一题
@@ -593,7 +609,8 @@ export default function App() {
                 )}
               </div>
             </motion.div>
-          )}
+            );
+          })()}
 
           {appState === 'result' && !resultData && (
             <motion.div
