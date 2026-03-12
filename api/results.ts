@@ -19,11 +19,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const redis = await getRedis();
     if (!redis) {
-      return res.status(503).json({ error: '未配置存储：请确保 Vercel 环境变量中已设置 REDIS_URL 并重新部署。' });
+      return res.status(503).json({ error: '未配置存储或 Redis 连接失败：请检查 REDIS_URL 是否正确，且 Vercel 可访问你的 Redis 服务。' });
     }
 
     const raw = await redis.lrange(LIST_KEY, 0, 999);
-    const results = (raw || [])
+    const list = Array.isArray(raw) ? raw : [];
+    const results = list
       .map((s) => {
         if (typeof s !== 'string') return null;
         try {
@@ -36,7 +37,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     return res.status(200).json(results);
   } catch (e) {
-    console.error('results error:', e);
-    return res.status(500).json({ error: '服务器加载数据失败，请稍后重试。' });
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error('results error:', msg, e);
+    return res.status(500).json({
+      error: '服务器加载数据失败。若使用 redis:// 连接，请确认 Redis 服务允许 Vercel 服务器 IP 连接，或改用 Upstash（HTTPS）存储。',
+    });
   }
 }

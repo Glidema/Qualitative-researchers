@@ -615,25 +615,28 @@ export default function App() {
             </motion.div>
           )}
 
-          {appState === 'result' && resultData && (
+          {appState === 'result' && resultData && (() => {
+            const topTypes = Array.isArray(resultData.topTypes) ? resultData.topTypes : [];
+            const scores = resultData.scores && typeof resultData.scores === 'object' ? resultData.scores : {};
+            return (
             <motion.div
               key="result"
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               className="space-y-6"
             >
-              {(resultData.topTypes || []).map((typeKey: string) => {
-                const typeInfo = personalityTypes[typeKey as keyof typeof personalityTypes];
+              {topTypes.map((typeKey: string) => {
+                const typeInfo = typeKey ? personalityTypes[typeKey as keyof typeof personalityTypes] : null;
                 if (!typeInfo) return null;
                 return (
-                  <div key={typeKey} className="bg-white rounded-3xl p-8 md:p-12 shadow-sm border border-stone-100 relative overflow-hidden">
-                    <div className="absolute top-0 right-0 w-64 h-64 bg-stone-50 rounded-full -mr-20 -mt-20 opacity-50 pointer-events-none"></div>
+                  <div key={String(typeKey)} className="bg-white rounded-3xl p-8 md:p-12 shadow-sm border border-stone-100 relative overflow-hidden">
+                    <div className="absolute top-0 right-0 w-64 h-64 bg-stone-50 rounded-full -mr-20 -mt-20 opacity-50 pointer-events-none" />
                     <div className="relative z-10">
                       <div className="text-[10px] md:text-sm font-mono text-stone-500 mb-2 md:mb-4 uppercase tracking-widest">Your Result</div>
                       <h2 className="text-2xl md:text-4xl font-serif font-medium text-stone-900 mb-4 md:mb-6 leading-tight">
                         {typeInfo.name}
                       </h2>
-                      <div className="w-10 h-1 bg-stone-800 mb-6 md:mb-8"></div>
+                      <div className="w-10 h-1 bg-stone-800 mb-6 md:mb-8" />
                       <p className="text-stone-600 text-base md:text-lg leading-relaxed mb-6 md:mb-10">
                         {typeInfo.description}
                       </p>
@@ -651,19 +654,20 @@ export default function App() {
                     { key: 'constructivism', label: '建构论', color: 'bg-emerald-700' },
                     { key: 'criticalTheory', label: '批判理论', color: 'bg-rose-700' },
                   ].map((dim) => {
-                    const score = resultData.scores?.[dim.key] ?? 0;
-                    const percentage = Math.min(100, Math.max(0, (Number(score) / 25) * 100));
+                    const score = scores[dim.key] ?? 0;
+                    const num = Number(score);
+                    const percentage = Number.isFinite(num) ? Math.min(100, Math.max(0, (num / 25) * 100)) : 0;
                     return (
                       <div key={dim.key}>
                         <div className="flex justify-between text-sm mb-2">
                           <span className="font-medium text-stone-700">{dim.label}</span>
-                          <span className="font-mono text-stone-500">{score} / 25</span>
+                          <span className="font-mono text-stone-500">{num} / 25</span>
                         </div>
                         <div className="w-full bg-stone-100 rounded-full h-2">
                           <div
                             className={cn("h-2 rounded-full transition-all duration-1000", dim.color)}
                             style={{ width: `${percentage}%` }}
-                          ></div>
+                          />
                         </div>
                       </div>
                     );
@@ -691,7 +695,8 @@ export default function App() {
                 </button>
               </div>
             </motion.div>
-          )}
+            );
+          })()}
 
           {appState === 'admin' && (
             <motion.div

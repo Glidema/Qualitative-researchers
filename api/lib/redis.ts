@@ -26,21 +26,27 @@ export async function getRedis(): Promise<RedisAdapter | null> {
 
   // redis:// 或 rediss:// → TCP 连接（Redis Labs 等），用 node-redis
   if (url.startsWith('redis://') || url.startsWith('rediss://')) {
-    const client = createNodeRedis({ url });
-    await client.connect();
-    return {
-      lpush: async (key: string, ...values: string[]) => {
-        let n = 0;
-        for (const v of values) {
-          n = Number(await client.lPush(key, v));
-        }
-        return n;
-      },
-      lrange: async (key: string, start: number, stop: number) => {
-        const raw = await client.lRange(key, start, stop);
-        return raw.map((x) => (typeof x === 'string' ? x : String(x)));
-      },
-    };
+    try {
+      const client = createNodeRedis({ url });
+      await client.connect();
+      return {
+        lpush: async (key: string, ...values: string[]) => {
+          let n = 0;
+          for (const v of values) {
+            n = Number(await client.lPush(key, v));
+          }
+          return n;
+        },
+        lrange: async (key: string, start: number, stop: number) => {
+          const raw = await client.lRange(key, start, stop);
+          const arr = Array.isArray(raw) ? raw : [];
+          return arr.map((x) => (typeof x === 'string' ? x : String(x)));
+        },
+      };
+    } catch (e) {
+      console.error('Redis TCP connect error:', e);
+      return null;
+    }
   }
 
   // HTTPS REST（Upstash）→ 需要 URL + Token，用 @vercel/kv
