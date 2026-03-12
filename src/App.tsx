@@ -259,9 +259,16 @@ export default function App() {
         }),
       });
 
+      const text = await res.text();
+      let apiError: string | null = null;
+      try {
+        const data = JSON.parse(text) as { error?: string };
+        apiError = data.error || null;
+      } catch {
+        if (res.status === 404) apiError = '未找到提交接口，请确认已部署到 Vercel 并已添加 KV（Redis）存储。';
+      }
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error((data as { error?: string }).error || `提交失败 ${res.status}`);
+        throw new Error(apiError || `提交失败 ${res.status}`);
       }
 
       if (submitTimedOutRef.current) return; // 已显示超时，不再改状态
@@ -294,11 +301,14 @@ export default function App() {
       const msg = error instanceof Error ? error.message : String(error);
       const isPermission = /permission|权限|denied/i.test(msg);
       const isNetwork = /unavailable|network|failed to fetch|load/i.test(msg);
-      const hint = isPermission
-        ? "提交失败：无写入权限，请检查 Firestore 规则。"
-        : isNetwork
-          ? "提交失败：网络不可用或无法连接服务器，请检查网络后重试。"
-          : "提交失败，请检查网络连接或重试。";
+      const isApiHint = /Storage not configured|Invalid payload|Submit failed|未找到提交接口|not configured|KV|Redis/i.test(msg);
+      const hint = isApiHint
+        ? msg
+        : isPermission
+          ? "提交失败：无写入权限，请检查配置。"
+          : isNetwork
+            ? "提交失败：网络不可用或无法连接服务器，请检查网络后重试。"
+            : "提交失败，请检查网络连接或重试。";
       setGlobalError(hint);
     }
   };

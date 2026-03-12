@@ -28,7 +28,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     if (!process.env.KV_REST_API_URL || !process.env.KV_REST_API_TOKEN) {
       return res.status(503).json({
-        error: 'Storage not configured. Add Vercel KV in project settings.',
+        error: '未配置存储：请在 Vercel 项目中添加 KV（Redis）存储并绑定到本项目。',
       });
     }
 
@@ -62,6 +62,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).json({ ok: true });
   } catch (e) {
     console.error('submit error:', e);
-    return res.status(500).json({ error: 'Submit failed' });
+    return res.status(500).json({ error: '服务器写入失败，请稍后重试。' });
   }
 }
