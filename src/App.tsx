@@ -124,9 +124,17 @@ export default function App() {
     fetch('/api/results', {
       headers: { 'X-Admin-Password': adminPassword },
     })
-      .then((res) => {
-        if (!res.ok) throw new Error(res.status === 401 ? '未授权' : '获取失败');
-        return res.json();
+      .then(async (res) => {
+        const text = await res.text();
+        let body: { error?: string } = {};
+        try {
+          body = JSON.parse(text);
+        } catch {}
+        if (!res.ok) {
+          const msg = body.error || (res.status === 401 ? '未授权' : `获取失败 ${res.status}`);
+          throw new Error(msg);
+        }
+        return JSON.parse(text) as any[];
       })
       .then((data: any[]) => {
         if (cancelled) return;
@@ -136,7 +144,14 @@ export default function App() {
       .catch((err) => {
         if (!cancelled) {
           console.error('Admin results error:', err);
-          setGlobalError(err.message === '未授权' ? '密码错误或已失效，请重新登录。' : '获取数据失败，请重试。');
+          const msg = err instanceof Error ? err.message : String(err);
+          const hint =
+            msg === '未授权' || /未授权|Unauthorized/i.test(msg)
+              ? '密码错误或已失效，请重新登录。'
+              : /Storage not configured|未配置存储/i.test(msg)
+                ? '未配置存储：请确保 Vercel 环境变量中已设置 REDIS_URL 并重新部署。'
+                : msg;
+          setGlobalError(hint);
         }
       })
       .finally(() => {
