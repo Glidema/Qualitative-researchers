@@ -46,11 +46,21 @@ export async function getRedis(): Promise<RedisAdapter | null> {
     process.env.REDIS_TOKEN ||
     process.env.STORAGE_REST_API_TOKEN;
 
-  // 1) REDIS_URL（redis-cyan-river 等）→ node-redis，同进程内复用
-  if (process.env.REDIS_URL) {
+  // 1) REDIS_URL 若为 https://（Upstash REST）且存在 token，走 REST，不尝试 TCP
+  const redisUrl = process.env.REDIS_URL;
+  if (redisUrl && redisUrl.startsWith('https://') && token) {
+    const kv = createVercelKv({ url: redisUrl, token });
+    return {
+      lpush: (key: string, ...values: string[]) => kv.lpush(key, ...(values as any)),
+      lrange: (key: string, start: number, stop: number) => kv.lrange(key, start, stop),
+    };
+  }
+
+  // 2) REDIS_URL 为 redis:// / rediss:// → node-redis TCP，同进程内复用
+  if (redisUrl && (redisUrl.startsWith('redis://') || redisUrl.startsWith('rediss://'))) {
     try {
       if (cachedAdapter) return cachedAdapter;
-      const client = createNodeRedis({ url: process.env.REDIS_URL });
+      const client = createNodeRedis({ url: redisUrl });
       await client.connect();
       cachedAdapter = makeAdapter(client);
       return cachedAdapter;
@@ -61,7 +71,7 @@ export async function getRedis(): Promise<RedisAdapter | null> {
     }
   }
 
-  // 2) 其他 redis:// / rediss:// URL
+  // 3) 其他 redis:// / rediss:// URL（如 KV_REST_API_* 未设但 URL 是 redis://）
   if (url && (url.startsWith('redis://') || url.startsWith('rediss://'))) {
     try {
       if (cachedAdapter) return cachedAdapter;
@@ -76,7 +86,7 @@ export async function getRedis(): Promise<RedisAdapter | null> {
     }
   }
 
-  // 3) HTTPS REST（Upstash）→ URL + Token，用 @vercel/kv
+  // 4) HTTPS REST（Upstash）→ URL + Token，用 @vercel/kv
   if (url && token) {
     const kv = createVercelKv({ url, token });
     return {

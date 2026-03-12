@@ -328,7 +328,7 @@ export default function App() {
       const msg = error instanceof Error ? error.message : String(error);
       const isPermission = /permission|权限|denied/i.test(msg);
       const isNetwork = /unavailable|network|failed to fetch|load/i.test(msg);
-      const isApiHint = /Storage not configured|Invalid payload|Submit failed|未找到提交接口|not configured|KV|Redis/i.test(msg);
+      const isApiHint = /Storage not configured|Invalid payload|Submit failed|未找到提交接口|not configured|KV|Redis|服务器写入失败|REDIS_URL/i.test(msg);
       const hint = isApiHint
         ? msg
         : isPermission
