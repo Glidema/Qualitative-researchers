@@ -30,7 +30,6 @@ function LoadErrorPage({ reason }: { reason?: string }) {
     <div
       style={{
         minHeight: '100vh',
-        minHeight: '-webkit-fill-available',
         background: '#f5f5f0',
         display: 'flex',
         flexDirection: 'column',
@@ -76,7 +75,6 @@ function LoadingScreen() {
     <div
       style={{
         minHeight: '100vh',
-        minHeight: '-webkit-fill-available',
         background: '#f5f5f0',
         display: 'flex',
         flexDirection: 'column',
