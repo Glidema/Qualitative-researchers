@@ -9,12 +9,12 @@ export type RedisAdapter = {
   lrange(key: string, start: number, stop: number): Promise<string[]>;
 };
 
-/** 支持 redis://（Redis Labs 等）或 Upstash REST（URL + Token） */
+/** 与 Vercel Redis 集成（如 redis-cyan-river）一致：优先用 REDIS_URL + node-redis 无参/带 url */
 export async function getRedis(): Promise<RedisAdapter | null> {
   const url =
+    process.env.REDIS_URL ||
     process.env.KV_REST_API_URL ||
     process.env.UPSTASH_REDIS_REST_URL ||
-    process.env.REDIS_URL ||
     process.env.STORAGE_REST_API_URL;
   const token =
     process.env.KV_REST_API_TOKEN ||
@@ -22,10 +22,33 @@ export async function getRedis(): Promise<RedisAdapter | null> {
     process.env.REDIS_TOKEN ||
     process.env.STORAGE_REST_API_TOKEN;
 
-  if (!url) return null;
+  // 1) REDIS_URL（redis-cyan-river 等注入）→ 用 node-redis，与官方文档一致
+  if (process.env.REDIS_URL) {
+    try {
+      const client = createNodeRedis({ url: process.env.REDIS_URL });
+      await client.connect();
+      return {
+        lpush: async (key: string, ...values: string[]) => {
+          let n = 0;
+          for (const v of values) {
+            n = Number(await client.lPush(key, v));
+          }
+          return n;
+        },
+        lrange: async (key: string, start: number, stop: number) => {
+          const raw = await client.lRange(key, start, stop);
+          const arr = Array.isArray(raw) ? raw : [];
+          return arr.map((x) => (typeof x === 'string' ? x : String(x)));
+        },
+      };
+    } catch (e) {
+      console.error('Redis connect error:', e);
+      return null;
+    }
+  }
 
-  // redis:// 或 rediss:// → TCP 连接（Redis Labs 等），用 node-redis
-  if (url.startsWith('redis://') || url.startsWith('rediss://')) {
+  // 2) 其他 redis:// / rediss:// URL
+  if (url && (url.startsWith('redis://') || url.startsWith('rediss://'))) {
     try {
       const client = createNodeRedis({ url });
       await client.connect();
@@ -49,8 +72,8 @@ export async function getRedis(): Promise<RedisAdapter | null> {
     }
   }
 
-  // HTTPS REST（Upstash）→ 需要 URL + Token，用 @vercel/kv
-  if (token) {
+  // 3) HTTPS REST（Upstash）→ URL + Token，用 @vercel/kv
+  if (url && token) {
     const kv = createVercelKv({ url, token });
     return {
       lpush: (key: string, ...values: string[]) => kv.lpush(key, ...(values as any)),
