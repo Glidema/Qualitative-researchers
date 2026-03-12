@@ -566,15 +566,20 @@ export default function App() {
                 </button>
 
                 {currentQuestionIndex === questions.length - 1 ? (
-                  <button
-                    type="button"
-                    onClick={handleSubmit}
-                    disabled={isSubmitting || submitSuccess || Object.keys(answers).length < questions.length}
-                    className="flex items-center justify-center min-h-[44px] px-6 py-2.5 bg-stone-800 text-white rounded-full hover:bg-stone-900 disabled:opacity-50 transition-all active:scale-[0.98]"
-                  >
-                    {isSubmitting ? "提交中..." : "查看结果"}
-                    {!isSubmitting && <Send className="w-4 h-4 ml-2" />}
-                  </button>
+                  <div className="flex flex-col items-end gap-1">
+                    <button
+                      type="button"
+                      onClick={handleSubmit}
+                      disabled={isSubmitting || submitSuccess || Object.keys(answers).length < questions.length}
+                      className="flex items-center justify-center min-h-[44px] px-6 py-2.5 bg-stone-800 text-white rounded-full hover:bg-stone-900 disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-[0.98]"
+                    >
+                      {isSubmitting ? "提交中..." : "查看结果"}
+                      {!isSubmitting && <Send className="w-4 h-4 ml-2" />}
+                    </button>
+                    {!isSubmitting && !submitSuccess && Object.keys(answers).length < questions.length && (
+                      <span className="text-xs text-stone-400">请先选择本题上方一个选项</span>
+                    )}
+                  </div>
                 ) : (
                   <button
                     type="button"
