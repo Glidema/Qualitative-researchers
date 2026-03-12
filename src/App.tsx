@@ -276,14 +276,15 @@ export default function App() {
       console.log("Result submitted successfully");
 
       localStorage.removeItem('quiz_progress');
-      setResultData({ scores, topTypes });
-
-      // Brief success state so transition feels intentional, not a sudden jump
+      const data = { scores, topTypes };
+      setResultData(data);
       setSubmitSuccess(true);
       setIsSubmitting(false);
-      await new Promise((r) => setTimeout(r, 450));
-      setAppState('result');
-      setSubmitSuccess(false);
+      // Brief success state then switch to result; use setTimeout so resultData is committed before we show result
+      setTimeout(() => {
+        setAppState('result');
+        setSubmitSuccess(false);
+      }, 450);
     } catch (error) {
       if (submitTimeoutRef.current) {
         clearTimeout(submitTimeoutRef.current);
@@ -558,6 +559,31 @@ export default function App() {
             </motion.div>
           )}
 
+          {appState === 'result' && !resultData && (
+            <motion.div
+              key="result-loading"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="bg-white rounded-[2rem] p-8 md:p-12 shadow-sm border border-stone-100 flex flex-col items-center justify-center min-h-[280px]"
+            >
+              <Loader2 className="w-10 h-10 text-stone-400 animate-spin mb-4" aria-hidden />
+              <p className="text-stone-600 font-medium">正在加载结果...</p>
+              <button
+                type="button"
+                onClick={() => {
+                  setAppState('intro');
+                  setUserInfo({ name: '', studentId: '' });
+                  setAnswers({});
+                  setCurrentQuestionIndex(0);
+                  setResultData(null);
+                }}
+                className="mt-6 text-sm text-stone-500 hover:text-stone-700 underline"
+              >
+                返回首页
+              </button>
+            </motion.div>
+          )}
+
           {appState === 'result' && resultData && (
             <motion.div
               key="result"
@@ -565,12 +591,12 @@ export default function App() {
               animate={{ opacity: 1, scale: 1 }}
               className="space-y-6"
             >
-              {resultData.topTypes.map((typeKey: keyof typeof personalityTypes) => {
-                const typeInfo = personalityTypes[typeKey];
+              {(resultData.topTypes || []).map((typeKey: string) => {
+                const typeInfo = personalityTypes[typeKey as keyof typeof personalityTypes];
+                if (!typeInfo) return null;
                 return (
                   <div key={typeKey} className="bg-white rounded-3xl p-8 md:p-12 shadow-sm border border-stone-100 relative overflow-hidden">
                     <div className="absolute top-0 right-0 w-64 h-64 bg-stone-50 rounded-full -mr-20 -mt-20 opacity-50 pointer-events-none"></div>
-                    
                     <div className="relative z-10">
                       <div className="text-[10px] md:text-sm font-mono text-stone-500 mb-2 md:mb-4 uppercase tracking-widest">Your Result</div>
                       <h2 className="text-2xl md:text-4xl font-serif font-medium text-stone-900 mb-4 md:mb-6 leading-tight">
@@ -594,8 +620,8 @@ export default function App() {
                     { key: 'constructivism', label: '建构论', color: 'bg-emerald-700' },
                     { key: 'criticalTheory', label: '批判理论', color: 'bg-rose-700' },
                   ].map((dim) => {
-                    const score = resultData.scores[dim.key];
-                    const percentage = (score / 25) * 100;
+                    const score = resultData.scores?.[dim.key] ?? 0;
+                    const percentage = Math.min(100, Math.max(0, (Number(score) / 25) * 100));
                     return (
                       <div key={dim.key}>
                         <div className="flex justify-between text-sm mb-2">
@@ -620,11 +646,13 @@ export default function App() {
                   数据已成功同步至云端数据库
                 </p>
                 <button
+                  type="button"
                   onClick={() => {
                     setAppState('intro');
                     setUserInfo({ name: '', studentId: '' });
                     setAnswers({});
                     setCurrentQuestionIndex(0);
+                    setResultData(null);
                   }}
                   className="px-8 py-3 border border-stone-200 text-stone-600 rounded-full hover:bg-stone-50 transition-all font-medium"
                 >
