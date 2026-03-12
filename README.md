@@ -50,6 +50,8 @@ Railway 自带 Redis，同机内网连接，避免 Vercel 上 500 问题。
 5. **生成域名**
    - 在 Service → **Settings** → **Networking** 里点 **Generate Domain**，用生成的链接即可访问。
 
+**若构建失败**（例如报 Node 版本或 better-sqlite3）：项目已要求 Node 20 并移除了未使用的 native 依赖。若仍用 Node 18，可在 Service 的 **Variables** 里添加 `NIXPACKS_NODE_VERSION=20` 后重新部署。
+
 **本地用 Railway 跑一遍（可选）**
 
 ```bash
