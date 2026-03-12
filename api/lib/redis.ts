@@ -9,7 +9,31 @@ export type RedisAdapter = {
   lrange(key: string, start: number, stop: number): Promise<string[]>;
 };
 
-/** 与 Vercel Redis 集成（如 redis-cyan-river）一致：优先用 REDIS_URL + node-redis 无参/带 url */
+let cachedAdapter: RedisAdapter | null = null;
+
+/** 出错时可由 API 调用，下次请求会重新建连 */
+export function clearRedisCache() {
+  cachedAdapter = null;
+}
+
+function makeAdapter(client: ReturnType<typeof createNodeRedis>): RedisAdapter {
+  return {
+    lpush: async (key: string, ...values: string[]) => {
+      let n = 0;
+      for (const v of values) {
+        n = Number(await client.lPush(key, v));
+      }
+      return n;
+    },
+    lrange: async (key: string, start: number, stop: number) => {
+      const raw = await client.lRange(key, start, stop);
+      const arr = Array.isArray(raw) ? raw : [];
+      return arr.map((x) => (typeof x === 'string' ? x : String(x)));
+    },
+  };
+}
+
+/** 与 Vercel Redis 集成（如 redis-cyan-river）一致：优先用 REDIS_URL，同进程内复用连接 */
 export async function getRedis(): Promise<RedisAdapter | null> {
   const url =
     process.env.REDIS_URL ||
@@ -22,27 +46,17 @@ export async function getRedis(): Promise<RedisAdapter | null> {
     process.env.REDIS_TOKEN ||
     process.env.STORAGE_REST_API_TOKEN;
 
-  // 1) REDIS_URL（redis-cyan-river 等注入）→ 用 node-redis，与官方文档一致
+  // 1) REDIS_URL（redis-cyan-river 等）→ node-redis，同进程内复用
   if (process.env.REDIS_URL) {
     try {
+      if (cachedAdapter) return cachedAdapter;
       const client = createNodeRedis({ url: process.env.REDIS_URL });
       await client.connect();
-      return {
-        lpush: async (key: string, ...values: string[]) => {
-          let n = 0;
-          for (const v of values) {
-            n = Number(await client.lPush(key, v));
-          }
-          return n;
-        },
-        lrange: async (key: string, start: number, stop: number) => {
-          const raw = await client.lRange(key, start, stop);
-          const arr = Array.isArray(raw) ? raw : [];
-          return arr.map((x) => (typeof x === 'string' ? x : String(x)));
-        },
-      };
+      cachedAdapter = makeAdapter(client);
+      return cachedAdapter;
     } catch (e) {
       console.error('Redis connect error:', e);
+      cachedAdapter = null;
       return null;
     }
   }
@@ -50,24 +64,14 @@ export async function getRedis(): Promise<RedisAdapter | null> {
   // 2) 其他 redis:// / rediss:// URL
   if (url && (url.startsWith('redis://') || url.startsWith('rediss://'))) {
     try {
+      if (cachedAdapter) return cachedAdapter;
       const client = createNodeRedis({ url });
       await client.connect();
-      return {
-        lpush: async (key: string, ...values: string[]) => {
-          let n = 0;
-          for (const v of values) {
-            n = Number(await client.lPush(key, v));
-          }
-          return n;
-        },
-        lrange: async (key: string, start: number, stop: number) => {
-          const raw = await client.lRange(key, start, stop);
-          const arr = Array.isArray(raw) ? raw : [];
-          return arr.map((x) => (typeof x === 'string' ? x : String(x)));
-        },
-      };
+      cachedAdapter = makeAdapter(client);
+      return cachedAdapter;
     } catch (e) {
       console.error('Redis TCP connect error:', e);
+      cachedAdapter = null;
       return null;
     }
   }
