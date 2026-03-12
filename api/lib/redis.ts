@@ -95,5 +95,29 @@ export async function getRedis(): Promise<RedisAdapter | null> {
     };
   }
 
-  return null;
+  // 5) 未配置 Redis 时使用进程内内存存储（重启后数据丢失，适合先跑通再配 Redis）
+  return getMemoryAdapter();
+}
+
+const memoryStore = new Map<string, string[]>();
+
+function getMemoryAdapter(): RedisAdapter {
+  return {
+    lpush: async (key: string, ...values: string[]) => {
+      let list = memoryStore.get(key);
+      if (!list) {
+        list = [];
+        memoryStore.set(key, list);
+      }
+      for (const v of values) list.unshift(v);
+      return list.length;
+    },
+    lrange: async (key: string, start: number, stop: number) => {
+      const list = memoryStore.get(key) ?? [];
+      const len = list.length;
+      const s = start < 0 ? Math.max(0, len + start) : start;
+      const e = stop < 0 ? Math.max(0, len + stop) : stop;
+      return list.slice(s, e + 1);
+    },
+  };
 }
