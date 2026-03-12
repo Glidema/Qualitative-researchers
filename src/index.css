@@ -1,14 +1,21 @@
 @import "tailwindcss";
 
-/* Mobile: reduce tap delay, prevent zoom on input focus (iOS) */
+/* 手机端：触控、iOS Safari / QQ 内置浏览器 兼容 */
 @layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    min-height: 100vh;
+    min-height: -webkit-fill-available;
+  }
   body {
+    min-height: 100vh;
+    min-height: -webkit-fill-available;
     touch-action: manipulation;
     -webkit-tap-highlight-color: transparent;
   }
   input,
   select,
   textarea {
-    font-size: 16px; /* avoids iOS zoom on focus */
+    font-size: 16px; /* 避免 iOS 聚焦时自动放大 */
   }
 }

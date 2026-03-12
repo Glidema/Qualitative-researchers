@@ -89,7 +89,12 @@ export default function App() {
 
   // Auto-save feature
   useEffect(() => {
-    const savedData = localStorage.getItem('quiz_progress');
+    let savedData: string | null = null;
+    try {
+      savedData = localStorage.getItem('quiz_progress');
+    } catch (_) {
+      // 无痕模式等可能不可用
+    }
     if (savedData) {
       try {
         const { userInfo: savedUserInfo, answers: savedAnswers, currentQuestionIndex: savedIndex, appState: savedState } = JSON.parse(savedData);
@@ -106,13 +111,17 @@ export default function App() {
 
   useEffect(() => {
     if (appState === 'quiz' || (appState === 'intro' && (userInfo.name || userInfo.studentId))) {
-      const dataToSave = {
-        userInfo,
-        answers,
-        currentQuestionIndex,
-        appState
-      };
-      localStorage.setItem('quiz_progress', JSON.stringify(dataToSave));
+      try {
+        const dataToSave = {
+          userInfo,
+          answers,
+          currentQuestionIndex,
+          appState
+        };
+        localStorage.setItem('quiz_progress', JSON.stringify(dataToSave));
+      } catch (_) {
+        // Safari 无痕模式等可能不可用，忽略
+      }
     }
   }, [userInfo, answers, currentQuestionIndex, appState]);
 
@@ -170,7 +179,9 @@ export default function App() {
 
   const handleResetProgress = () => {
     if (window.confirm("确定要清除所有进度并重新开始吗？")) {
-      localStorage.removeItem('quiz_progress');
+      try {
+        localStorage.removeItem('quiz_progress');
+      } catch (_) {}
       setUserInfo({ name: '', studentId: '' });
       setAnswers({});
       setCurrentQuestionIndex(0);
@@ -275,7 +286,9 @@ export default function App() {
       }
       console.log("Result submitted successfully");
 
-      localStorage.removeItem('quiz_progress');
+      try {
+        localStorage.removeItem('quiz_progress');
+      } catch (_) {}
       const data = { scores, topTypes };
       setResultData(data);
       setSubmitSuccess(true);
