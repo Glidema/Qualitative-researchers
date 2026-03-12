@@ -1,20 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { createClient } from '@vercel/kv';
-
-const LIST_KEY = 'quiz:results';
-
-function getKvClient() {
-  const url =
-    process.env.KV_REST_API_URL ||
-    process.env.UPSTASH_REDIS_REST_URL ||
-    process.env.STORAGE_REST_API_URL;
-  const token =
-    process.env.KV_REST_API_TOKEN ||
-    process.env.UPSTASH_REDIS_REST_TOKEN ||
-    process.env.STORAGE_REST_API_TOKEN;
-  if (!url || !token) return null;
-  return createClient({ url, token });
-}
+import { getRedis, LIST_KEY } from './lib/redis';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'GET') {
@@ -29,12 +14,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const kv = getKvClient();
-    if (!kv) {
+    const redis = await getRedis();
+    if (!redis) {
       return res.status(503).json({ error: 'Storage not configured.' });
     }
 
-    const raw = await kv.lrange<string>(LIST_KEY, 0, 999);
+    const raw = await redis.lrange(LIST_KEY, 0, 999);
     const results = (raw || [])
       .map((s) => {
         if (typeof s !== 'string') return null;

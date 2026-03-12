@@ -1,21 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { createClient } from '@vercel/kv';
-
-const LIST_KEY = 'quiz:results';
-
-/** 兼容多种 Redis 环境变量名：Vercel KV 前缀 或 Upstash 默认 */
-function getKvClient() {
-  const url =
-    process.env.KV_REST_API_URL ||
-    process.env.UPSTASH_REDIS_REST_URL ||
-    process.env.STORAGE_REST_API_URL;
-  const token =
-    process.env.KV_REST_API_TOKEN ||
-    process.env.UPSTASH_REDIS_REST_TOKEN ||
-    process.env.STORAGE_REST_API_TOKEN;
-  if (!url || !token) return null;
-  return createClient({ url, token });
-}
+import { getRedis, LIST_KEY } from './lib/redis';
 
 interface SubmitBody {
   name: string;
@@ -40,10 +24,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const kv = getKvClient();
-    if (!kv) {
+    const redis = await getRedis();
+    if (!redis) {
       return res.status(503).json({
-        error: '未配置存储：请在 Vercel 项目 Storage 中绑定 Redis，并确保 Production 已勾选，然后重新部署。',
+        error: '未配置存储：请在 Vercel 环境变量中设置 REDIS_URL（redis:// 连接串）或 Upstash 的 URL+Token，然后重新部署。',
       });
     }
 
@@ -72,7 +56,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       createdAt: new Date().toISOString(),
     };
 
-    await kv.lpush(LIST_KEY, JSON.stringify(item));
+    await redis.lpush(LIST_KEY, JSON.stringify(item));
 
     return res.status(200).json({ ok: true });
   } catch (e) {
